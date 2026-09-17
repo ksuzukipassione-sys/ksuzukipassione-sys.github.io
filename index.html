@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>連続スキャン登録</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; font-size: 16px; }
+    label { display: block; margin-top: 12px; font-weight: bold; }
+    input, select { width: 100%; padding: 10px; font-size: 18px; margin-top: 4px; box-sizing: border-box; }
+    button { width: 100%; padding: 14px; font-size: 18px; margin-top: 16px; }
+    #count { margin-top: 16px; font-size: 20px; font-weight: bold; text-align: center; }
+    #status { margin-top: 8px; text-align: center; color: #666; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <label>作業内容</label>
+  <select id="action" onchange="onActionChange()">
+    <option value="入荷">入荷</option>
+    <option value="移動">移動</option>
+    <option value="消化">消化</option>
+  </select>
+
+  <label>担当者</label>
+  <input id="staff" placeholder="担当者名">
+
+  <div id="warehouseFields">
+    <label>倉庫</label>
+    <input id="warehouse" placeholder="例:甲田/Koda">
+    <label>ロケーション</label>
+    <input id="location" placeholder="棚番号・パレットIDなど">
+  </div>
+
+  <label>予定数(任意・消化時の照合用)</label>
+  <input id="expected" type="number" placeholder="例:36">
+
+  <button onclick="toggleScanner()" id="scanBtn">📷 カメラでスキャン開始</button>
+  <div id="reader" style="width:100%; margin-top:10px;"></div>
+
+  <label>ロットID(手入力も可能)</label>
+  <input id="lotId" placeholder="スキャンまたは手入力" onkeydown="if(event.key==='Enter'){lookup();}">
+
+  <div id="editFields" class="hidden">
+    <label>商品名</label>
+    <input id="itemName">
+    <label>入り枚数</label>
+    <input id="qty" type="number">
+    <button onclick="submitEntry()">登録</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="count">本日の処理件数:<span id="counter">0</span>件</div>
+
+<script>
+  // ここに、再デプロイ後のApps ScriptのURL(/exec で終わるもの)を貼り付けてください
+  var API_URL = 'ここにApps ScriptのウェブアプリURL';
+
+  var processedCount = 0;
+  var currentLotId = '';
+  var html5QrCode = null;
+  var scanning = false;
+  var lastScanned = '';
+  var lastScanTime = 0;
+
+  function onActionChange() {
+    var action = document.getElementById('action').value;
+    document.getElementById('warehouseFields').classList.toggle('hidden', action === '消化');
+  }
+
+  function toggleScanner() {
+    if (scanning) { stopScanner(); } else { startScanner(); }
+  }
+
+  function startScanner() {
+    html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 220 },
+      onScanSuccess
+    ).then(function() {
+      scanning = true;
+      document.getElementById('scanBtn').innerText = '📷 カメラを停止';
+    }).catch(function(err) {
+      document.getElementById('status').innerText = 'カメラを起動できません: ' + err;
+    });
+  }
+
+  function stopScanner() {
+    if (html5QrCode) {
+      html5QrCode.stop().then(function() {
+        scanning = false;
+        document.getElementById('scanBtn').innerText = '📷 カメラでスキャン開始';
+      });
+    }
+  }
+
+  function onScanSuccess(decodedText) {
+    var now = Date.now();
+    if (decodedText === lastScanned && (now - lastScanTime) < 2000) return;
+    lastScanned = decodedText;
+    lastScanTime = now;
+
+    var lotId = extractLotId(decodedText);
+    document.getElementById('lotId').value = lotId;
+    lookup();
+  }
+
+  function extractLotId(text) {
+    try {
+      var url = new URL(text);
+      var params = new URLSearchParams(url.search);
+      var val = params.get('entry.1625106833');
+      return val || text;
+    } catch (e) {
+      return text;
+    }
+  }
+
+  function lookup() {
+    var lotId = document.getElementById('lotId').value.trim();
+    if (!lotId) return;
+    currentLotId = lotId;
+    var action = document.getElementById('action').value;
+
+    document.getElementById('status').innerText = '検索中...';
+    var url = API_URL + '?mode=lookup&lotId=' + encodeURIComponent(lotId) + '&action=' + encodeURIComponent(action);
+
+    fetch(url)
+      .then(function(res) { return res.json(); })
+      .then(function(res) {
+        if (!res.found) {
+          document.getElementById('status').innerText = '該当するロットIDが見つかりません: ' + lotId;
+          document.getElementById('editFields').classList.add('hidden');
+          return;
+        }
+        if (action === '入荷') {
+          document.getElementById('itemName').value = res.itemName;
+          document.getElementById('qty').value = res.qty;
+          document.getElementById('editFields').classList.remove('hidden');
+          document.getElementById('status').innerText = '内容を確認して「登録」を押してください';
+        } else {
+          document.getElementById('status').innerText = res.itemName + '(' + lotId + ')を' + action + '登録します';
+          submitEntry();
+        }
+      })
+      .catch(function(err) {
+        document.getElementById('status').innerText = '通信エラー: ' + err;
+      });
+  }
+
+  function submitEntry() {
+    var action = document.getElementById('action').value;
+    var params = new URLSearchParams({
+      mode: 'submit',
+      action: action,
+      lotId: currentLotId,
+      staff: document.getElementById('staff').value,
+      warehouse: document.getElementById('warehouse').value,
+      location: document.getElementById('location').value,
+      itemName: document.getElementById('itemName') ? document.getElementById('itemName').value : '',
+      qty: document.getElementById('qty') ? document.getElementById('qty').value : ''
+    });
+
+    document.getElementById('status').innerText = '登録中...';
+    fetch(API_URL + '?' + params.toString())
+      .then(function(res) { return res.json(); })
+      .then(function(res) {
+        if (res.success) {
+          processedCount++;
+          document.getElementById('counter').innerText = processedCount;
+          var expected = document.getElementById('expected').value;
+          if (expected && parseInt(processedCount) === parseInt(expected)) {
+            document.getElementById('status').innerText = '予定数(' + expected + '件)に到達しました';
+          } else if (expected) {
+            document.getElementById('status').innerText = '登録完了(' + processedCount + '/' + expected + '件)';
+          } else {
+            document.getElementById('status').innerText = '登録完了';
+          }
+        } else {
+          document.getElementById('status').innerText = 'エラー: ' + res.message;
+        }
+        document.getElementById('lotId').value = '';
+        document.getElementById('editFields').classList.add('hidden');
+      })
+      .catch(function(err) {
+        document.getElementById('status').innerText = '通信エラー: ' + err;
+      });
+  }
+</script>
+</body>
+</html>
