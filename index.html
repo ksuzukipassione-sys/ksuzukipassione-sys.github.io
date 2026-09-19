@@ -76,6 +76,13 @@
     var action = document.getElementById('action').value;
     document.getElementById('warehouseFields').classList.toggle('hidden', action === '消化');
   }
+  function toggleScanner() {
+  if (scanning) {
+    stopScanner();
+  } else {
+    startScanner();
+  }
+}
 
     function startScanner() {
     html5QrCode = new Html5Qrcode("reader");
