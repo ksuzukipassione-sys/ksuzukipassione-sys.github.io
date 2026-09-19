@@ -80,16 +80,12 @@
   function startScanner() {
   html5QrCode = new Html5Qrcode("reader");
   html5QrCode.start(
-    { facingMode: "environment" },
     {
-      fps: 10,
-      qrbox: 260,
-      videoConstraints: {
-        facingMode: "environment",
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
-      }
+      facingMode: "environment",
+      width: { ideal: 1920 },
+      height: { ideal: 1080 }
     },
+    { fps: 10, qrbox: 260 },
     onScanSuccess
   ).then(function() {
     scanning = true;
