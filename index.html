@@ -77,23 +77,27 @@
     document.getElementById('warehouseFields').classList.toggle('hidden', action === '消化');
   }
 
-  function toggleScanner() {
-    if (scanning) { stopScanner(); } else { startScanner(); }
-  }
-
   function startScanner() {
-    html5QrCode = new Html5Qrcode("reader");
-    html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 220 },
-      onScanSuccess
-    ).then(function() {
-      scanning = true;
-      document.getElementById('scanBtn').innerText = '📷 カメラを停止';
-    }).catch(function(err) {
-      document.getElementById('status').innerText = 'カメラを起動できません: ' + err;
-    });
-  }
+  html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    {
+      fps: 10,
+      qrbox: 260,
+      videoConstraints: {
+        facingMode: "environment",
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    },
+    onScanSuccess
+  ).then(function() {
+    scanning = true;
+    document.getElementById('scanBtn').innerText = '📷 カメラを停止';
+  }).catch(function(err) {
+    document.getElementById('status').innerText = 'カメラを起動できません: ' + err;
+  });
+}
 
   function stopScanner() {
     if (html5QrCode) {
