@@ -44,6 +44,59 @@
   <label>予定数(任意・消化時の照合用)</label>
   <input id="expected" type="number" placeholder="例:36">
 
+  <button onclick="loadDay()">本日の入荷データを読み込む</button>
+  var dayItems = {}; // その日のデータをまとめて保持
+var dayLoaded = false;
+
+function loadDay() {
+  var dateStr = prompt('入荷日を8桁で入力してください(例:20260913)');
+  if (!dateStr) return;
+  document.getElementById('status').innerText = '読み込み中...';
+  fetch(API_URL + '?mode=loadDay&dateStr=' + dateStr)
+    .then(function(res) { return res.json(); })
+    .then(function(res) {
+      if (!res.found) {
+        document.getElementById('status').innerText = res.message;
+        return;
+      }
+      dayItems = res.items;
+      dayLoaded = true;
+      document.getElementById('status').innerText = '読み込み完了(' + Object.keys(dayItems).length + '件)。スキャンを開始してください';
+    });
+}
+
+function onScanSuccess(decodedText) {
+  var now = Date.now();
+  if (decodedText === lastScanned && (now - lastScanTime) < 2000) return;
+  lastScanned = decodedText;
+  lastScanTime = now;
+
+  var lotId = extractLotId(decodedText);
+  document.getElementById('lotId').value = lotId;
+  currentLotId = lotId;
+  var action = document.getElementById('action').value;
+
+  if (action === '入荷') {
+    if (!dayLoaded) {
+      document.getElementById('status').innerText = '先に「本日の入荷データを読み込む」を押してください';
+      return;
+    }
+    var item = dayItems[lotId];
+    if (!item) {
+      document.getElementById('status').innerText = '該当するロットIDが見つかりません: ' + lotId;
+      return;
+    }
+    // 通信せず、その場で即座に表示
+    document.getElementById('itemName').value = item.itemName;
+    document.getElementById('qty').value = item.qty;
+    document.getElementById('editFields').classList.remove('hidden');
+    document.getElementById('status').innerText = '内容を確認して「登録」を押してください';
+  } else {
+    document.getElementById('status').innerText = '登録中...';
+    submitEntry();
+  }
+}
+
   <button onclick="toggleScanner()" id="scanBtn">📷 カメラでスキャン開始</button>
   <div id="reader" style="width:100%; margin-top:10px;"></div>
 
@@ -115,16 +168,48 @@
     }
   }
 
-  function onScanSuccess(decodedText) {
-    var now = Date.now();
-    if (decodedText === lastScanned && (now - lastScanTime) < 2000) return;
-    lastScanned = decodedText;
-    lastScanTime = now;
+ var registeredIds = {}; // このセッション内で登録済みのロットIDを記録
 
-    var lotId = extractLotId(decodedText);
-    document.getElementById('lotId').value = lotId;
-    lookup();
+function onScanSuccess(decodedText) {
+  var now = Date.now();
+  if (decodedText === lastScanned && (now - lastScanTime) < 2000) return;
+  lastScanned = decodedText;
+  lastScanTime = now;
+
+  var lotId = extractLotId(decodedText);
+  document.getElementById('lotId').value = lotId;
+  currentLotId = lotId;
+  var action = document.getElementById('action').value;
+
+  if (action === '入荷') {
+    if (!dayLoaded) {
+      document.getElementById('status').innerText = '先に「本日の入荷データを読み込む」を押してください';
+      return;
+    }
+    if (registeredIds[lotId]) {
+      document.getElementById('status').innerText = '⚠ このロットIDは既に登録済みです: ' + lotId;
+      return;
+    }
+    var item = dayItems[lotId];
+    if (!item) {
+      document.getElementById('status').innerText = '該当するロットIDが見つかりません: ' + lotId;
+      return;
+    }
+    document.getElementById('itemName').value = item.itemName;
+    document.getElementById('qty').value = item.qty;
+    document.getElementById('editFields').classList.remove('hidden');
+    document.getElementById('status').innerText = '内容を確認して「登録」を押してください';
+  } else {
+    document.getElementById('status').innerText = '登録中...';
+    submitEntry();
+    if (res.success) {
+  if (document.getElementById('action').value === '入荷') {
+    registeredIds[currentLotId] = true; // 登録済みとして記録
   }
+  processedCount++;
+  // ...(以下は今まで通り)
+  }
+}
 
   function extractLotId(text) {
     try {
